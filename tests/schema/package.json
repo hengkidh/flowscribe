@@ -1,0 +1,13 @@
+{
+  "name": "flowscribe-schema-tests",
+  "private": true,
+  "description": "Development-only: validates the examples and templates against the flowscribe schemas in CI. Not part of any release.",
+  "type": "module",
+  "scripts": {
+    "test": "node validate.mjs"
+  },
+  "devDependencies": {
+    "ajv": "8.17.1",
+    "yaml": "2.6.1"
+  }
+}

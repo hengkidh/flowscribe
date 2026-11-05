@@ -1,0 +1,8 @@
+# Security-sensitive paths: agents follow these files as instructions, so every change needs owner review.
+# Enforced when branch protection on main requires review from code owners.
+*                       @hengkidh
+/install.sh             @hengkidh
+/scripts/               @hengkidh
+/payload/               @hengkidh
+/schema/                @hengkidh
+/.github/               @hengkidh

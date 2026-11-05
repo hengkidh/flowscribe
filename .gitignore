@@ -1,0 +1,4 @@
+.DS_Store
+/dist/
+tests/schema/node_modules/
+*.flowscribe-new

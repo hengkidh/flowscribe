@@ -1,0 +1,18 @@
+# flowscribe project settings. This file is yours: once you edit it, the installer never overwrites it.
+flowscribe: 1
+
+# private: documents are for the team only (default; recommended for client projects).
+# public:  the repository is public; internal documents must live in .flowscribe/private/.
+visibility: private
+
+# Default audience for new documents: internal | external.
+default_audience: internal
+
+capture:
+  # Hosts the flowscribe-flow and flowscribe-video skills may screenshot, besides localhost/127.0.0.1.
+  # Only add local or staging hosts that run with seed/dummy data. Never a production host.
+  allowed_hosts: []
+
+docs:
+  # Language for the prose part of documents. Frontmatter keys are always English.
+  language: en

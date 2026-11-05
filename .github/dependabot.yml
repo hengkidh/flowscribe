@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # Keeps the SHA-pinned actions current; each update arrives as a reviewable PR.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+  # Dev-only schema test dependencies (never shipped in a release).
+  - package-ecosystem: npm
+    directory: /tests/schema
+    schedule: { interval: weekly }

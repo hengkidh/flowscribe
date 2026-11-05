@@ -1,0 +1,57 @@
+name: release
+
+# Releases are built only here, from a pushed tag, never on a developer machine.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write       # create the GitHub Release
+      id-token: write       # sign the provenance attestation
+      attestations: write   # store the attestation
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check tag matches VERSION
+        env:
+          TAG: ${{ github.ref_name }}   # passed via env, never interpolated into the script
+        run: |
+          printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo "::error::bad tag"; exit 1; }
+          test "v$(tr -d '[:space:]' < VERSION)" = "$TAG" || { echo "::error::tag does not match VERSION"; exit 1; }
+
+      - name: Test
+        run: |
+          bash tests/install.test.sh
+          bash tests/get.test.sh
+
+      - name: Build archive, get.sh and SHA256SUMS
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: bash scripts/build-release.sh "${TAG#v}" "$REPO" dist
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/flowscribe-*.tar.gz
+            dist/get.sh
+
+      # Enable "Release immutability" in the repository settings: assets attached here can then
+      # never be replaced, so the get.sh URL for a version always serves the same verified file.
+      - name: Create GitHub Release
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" "dist/flowscribe-$TAG.tar.gz" dist/get.sh dist/SHA256SUMS \
+            --verify-tag --title "flowscribe $TAG" --generate-notes

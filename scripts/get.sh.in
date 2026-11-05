@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# flowscribe one-line installer for release v@VERSION@ (built by the release workflow; do not edit).
+#
+#   curl -fsSL https://github.com/@REPO@/releases/download/v@VERSION@/get.sh | bash
+#   curl -fsSL https://github.com/@REPO@/releases/download/v@VERSION@/get.sh | bash -s -- --dry-run
+#
+# What it does:
+#   1. downloads exactly release v@VERSION@ (never a branch);
+#   2. refuses it unless its SHA-256 equals the value embedded below at release time;
+#   3. verifies the GitHub build attestation when the gh CLI is installed and signed in;
+#   4. refuses archives with symlinks, hard links, absolute paths or '..';
+#   5. keeps the release in ~/.flowscribe/@VERSION@/ so other projects can reuse it;
+#   6. runs that release's install.sh in the current directory. It shows the plan and asks first.
+#
+# Everything runs inside main(), called on the very last line, so a truncated download runs nothing.
+# Environment (optional):
+#   FLOWSCRIBE_HOME                 where releases are kept (default: ~/.flowscribe)
+#   FLOWSCRIBE_REQUIRE_ATTESTATION  set to 1 to refuse installing when the attestation cannot be checked
+#   FLOWSCRIBE_DOWNLOAD_BASE        mirror to download from (https:// or file://); the checksum still applies
+
+GET_TMP=""
+get_cleanup() { if [ -n "$GET_TMP" ] && [ -d "$GET_TMP" ]; then rm -rf -- "$GET_TMP"; fi; }
+get_die() { printf 'flowscribe get: error: %s\n' "$*" >&2; exit 1; }
+get_say() { printf 'flowscribe get: %s\n' "$*" >&2; }
+
+get_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum -- "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 -- "$1" | awk '{print $1}'
+  else get_die "need sha256sum or shasum"; fi
+}
+
+main() {
+  set -euo pipefail
+  umask 022
+  export LC_ALL=C
+  trap get_cleanup EXIT
+  trap 'exit 130' INT TERM
+
+  local version='@VERSION@' sha256='@SHA256@' repo='@REPO@'
+  printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' \
+    || get_die "this get.sh was not produced by the flowscribe release workflow"
+  printf '%s' "$sha256" | grep -Eq '^[0-9a-f]{64}$' || get_die "invalid embedded checksum"
+  printf '%s' "$repo" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || get_die "invalid embedded repository"
+
+  local cmd
+  for cmd in curl tar awk grep; do
+    command -v "$cmd" >/dev/null 2>&1 || get_die "need $cmd"
+  done
+
+  local nl='
+'
+  local base="${FLOWSCRIBE_HOME:-${HOME:-}/.flowscribe}"
+  case "$base" in /*) ;; *) get_die "FLOWSCRIBE_HOME (or HOME) must be an absolute path" ;; esac
+  case "$base" in *"$nl"*) get_die "FLOWSCRIBE_HOME must not contain newlines" ;; esac
+  local dest="$base/$version"
+  [ ! -L "$base" ] || get_die "$base is a symlink; refusing"
+  [ ! -L "$dest" ] || get_die "$dest is a symlink; refusing"
+
+  if [ -e "$dest" ]; then
+    # Reuse a release this script verified earlier.
+    if [ -f "$dest/.flowscribe-verified" ] && [ "$(cat "$dest/.flowscribe-verified")" = "$sha256" ] \
+       && [ -f "$dest/install.sh" ]; then
+      get_say "using verified release in $dest"
+    else
+      get_die "$dest exists but was not verified by this script; remove it and run again"
+    fi
+  else
+    local dl_base="${FLOWSCRIBE_DOWNLOAD_BASE:-https://github.com/$repo/releases/download/v$version}"
+    local proto
+    case "$dl_base" in
+      https://*) proto="=https" ;;
+      file://*)  proto="=file" ;;
+      *) get_die "FLOWSCRIBE_DOWNLOAD_BASE must start with https:// or file://" ;;
+    esac
+    case "$dl_base" in *"$nl"*|*" "*) get_die "invalid FLOWSCRIBE_DOWNLOAD_BASE" ;; esac
+
+    local name="flowscribe-v$version"
+    GET_TMP="$(mktemp -d "${TMPDIR:-/tmp}/flowscribe-get.XXXXXX")"
+    local archive="$GET_TMP/$name.tar.gz"
+
+    get_say "downloading $name.tar.gz"
+    curl --proto "$proto" --tlsv1.2 -fsSL --retry 3 -o "$archive" "$dl_base/$name.tar.gz" \
+      || get_die "download failed: $dl_base/$name.tar.gz"
+
+    [ "$(get_sha256 "$archive")" = "$sha256" ] \
+      || get_die "checksum mismatch: the download is not the published v$version; nothing was installed"
+    get_say "checksum verified"
+
+    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+      local out
+      if out="$(gh attestation verify "$archive" --repo "$repo" 2>&1)"; then
+        get_say "build attestation verified ($repo)"
+      else
+        printf '%s\n' "$out" >&2
+        get_die "build attestation could not be verified; nothing was installed"
+      fi
+    elif [ "${FLOWSCRIBE_REQUIRE_ATTESTATION:-0}" = "1" ]; then
+      get_die "FLOWSCRIBE_REQUIRE_ATTESTATION=1 but the gh CLI is not installed or not signed in"
+    else
+      get_say "note: build attestation not checked (gh CLI not installed or not signed in)"
+    fi
+
+    # Inspect the archive before extracting anything.
+    local entry
+    while IFS= read -r entry; do
+      case "$entry" in
+        "$name"|"$name"/*) ;;
+        *) get_die "unexpected path in archive: $entry" ;;
+      esac
+      case "/$entry/" in */../*) get_die "path traversal in archive: $entry" ;; esac
+    done < <(tar -tzf "$archive")
+    while IFS= read -r entry; do
+      case "$entry" in
+        -*|d*) ;;
+        *) get_die "archive contains a link or special file; refusing" ;;
+      esac
+      case "$entry" in *" -> "*|*" link to "*) get_die "archive contains a link; refusing" ;; esac
+    done < <(tar -tvzf "$archive")
+
+    mkdir "$GET_TMP/x"
+    tar -xzf "$archive" -C "$GET_TMP/x" --no-same-owner
+    [ -z "$(find "$GET_TMP/x" -type l -print)" ] || get_die "archive contains a symlink; refusing"
+    local src="$GET_TMP/x/$name"
+    if [ ! -f "$src/install.sh" ] || [ ! -f "$src/VERSION" ]; then get_die "archive is incomplete"; fi
+    [ "$(tr -d '[:space:]' < "$src/VERSION")" = "$version" ] || get_die "archive VERSION does not match v$version"
+
+    printf '%s\n' "$sha256" > "$src/.flowscribe-verified"
+    mkdir -p "$base"
+    [ ! -L "$base" ] || get_die "$base is a symlink; refusing"
+    [ ! -e "$dest" ] || get_die "$dest appeared while installing; run again"
+    mv -- "$src" "$dest"
+    get_say "release kept in $dest (reuse it in other projects: $dest/install.sh)"
+  fi
+
+  get_cleanup; GET_TMP=""; trap - EXIT
+  exec bash "$dest/install.sh" "$@"
+}
+
+main "$@"

@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:flowscribe:v1:document",
+  "title": "flowscribe document frontmatter (v1)",
+  "type": "object",
+  "required": ["flowscribe", "type"],
+  "properties": {
+    "type": { "enum": ["flow", "module", "decision", "log"] }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/flow" },
+    { "$ref": "#/$defs/module" },
+    { "$ref": "#/$defs/decision" },
+    { "$ref": "#/$defs/log" }
+  ],
+
+  "$defs": {
+    "version": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,47}$" },
+    "idList": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true },
+    "date": { "type": "string", "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "docStatus": { "enum": ["draft", "active", "deprecated"] },
+    "audience": { "enum": ["internal", "external"], "default": "internal" },
+    "tags": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" }
+    },
+    "safeText": {
+      "description": "Short free text. Rejects URLs and credential-like '@' to keep hosts and secrets out of frontmatter.",
+      "type": "string",
+      "minLength": 1,
+      "not": { "pattern": "://|@" }
+    },
+    "repoPath": {
+      "description": "Repo-relative path or glob. No absolute paths, no parent traversal, no home dir.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^(?![/~])(?!.*(^|/)\\.\\.(/|$))[^\\s:\\\\]+$"
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/repoPath" }
+    },
+
+    "call": {
+      "oneOf": [
+        { "$ref": "#/$defs/safeText", "maxLength": 120 },
+        {
+          "type": "object",
+          "required": ["type", "target"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "enum": ["http", "event", "job", "webhook", "db", "external"] },
+            "target": { "$ref": "#/$defs/safeText", "maxLength": 120 },
+            "note": { "$ref": "#/$defs/safeText", "maxLength": 120 }
+          }
+        }
+      ]
+    },
+
+    "step": {
+      "type": "object",
+      "required": ["id", "kind", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["screen", "action", "system", "decision", "external", "subflow"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "screen": {
+          "type": "object",
+          "required": ["route"],
+          "additionalProperties": false,
+          "properties": {
+            "route": { "type": "string", "pattern": "^/[^\\s]*$", "not": { "pattern": "://|@" }, "maxLength": 200 },
+            "name": { "type": "string", "maxLength": 60 }
+          }
+        },
+        "action": { "$ref": "#/$defs/safeText", "maxLength": 120 },
+        "calls": { "type": "array", "maxItems": 10, "items": { "$ref": "#/$defs/call" } },
+        "states": {
+          "type": "array",
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,31}$" }
+        },
+        "next": {
+          "oneOf": [
+            { "$ref": "#/$defs/id" },
+            {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 6,
+              "items": {
+                "type": "object",
+                "required": ["when", "to"],
+                "additionalProperties": false,
+                "properties": {
+                  "when": { "$ref": "#/$defs/safeText", "maxLength": 80 },
+                  "to": { "$ref": "#/$defs/id" }
+                }
+              }
+            }
+          ]
+        },
+        "end": { "enum": ["success", "failure"] },
+        "subflow": { "$ref": "#/$defs/id" },
+        "caption": { "type": "string", "minLength": 1, "maxLength": 60 }
+      },
+      "allOf": [
+        { "if": { "properties": { "kind": { "const": "screen" } } }, "then": { "required": ["screen"] } },
+        { "if": { "properties": { "kind": { "const": "subflow" } } }, "then": { "required": ["subflow"] } },
+        { "if": { "required": ["end"] }, "then": { "not": { "required": ["next"] } } }
+      ]
+    },
+
+    "flow": {
+      "type": "object",
+      "required": ["flowscribe", "type", "id", "title", "summary", "status", "updated", "actor", "trigger", "steps", "files"],
+      "additionalProperties": false,
+      "properties": {
+        "flowscribe": { "$ref": "#/$defs/version" },
+        "type": { "const": "flow" },
+        "id": { "$ref": "#/$defs/id" },
+        "title": { "$ref": "#/$defs/title" },
+        "summary": { "$ref": "#/$defs/summary" },
+        "status": { "$ref": "#/$defs/docStatus" },
+        "updated": { "$ref": "#/$defs/date" },
+        "audience": { "$ref": "#/$defs/audience" },
+        "tags": { "$ref": "#/$defs/tags" },
+        "files": { "$ref": "#/$defs/files" },
+        "actor": { "$ref": "#/$defs/id" },
+        "trigger": { "$ref": "#/$defs/safeText", "maxLength": 120 },
+        "modules": { "$ref": "#/$defs/idList" },
+        "related": { "$ref": "#/$defs/idList" },
+        "steps": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "$ref": "#/$defs/step" } }
+      }
+    },
+
+    "module": {
+      "type": "object",
+      "required": ["flowscribe", "type", "id", "title", "summary", "status", "updated", "kind", "files"],
+      "additionalProperties": false,
+      "properties": {
+        "flowscribe": { "$ref": "#/$defs/version" },
+        "type": { "const": "module" },
+        "id": { "$ref": "#/$defs/id" },
+        "title": { "$ref": "#/$defs/title" },
+        "summary": { "$ref": "#/$defs/summary" },
+        "status": { "$ref": "#/$defs/docStatus" },
+        "updated": { "$ref": "#/$defs/date" },
+        "audience": { "$ref": "#/$defs/audience" },
+        "tags": { "$ref": "#/$defs/tags" },
+        "files": { "$ref": "#/$defs/files" },
+        "kind": { "enum": ["feature", "domain", "infra", "shared"] },
+        "entrypoints": { "type": "array", "maxItems": 10, "uniqueItems": true, "items": { "$ref": "#/$defs/repoPath" } },
+        "depends_on": { "$ref": "#/$defs/idList" },
+        "env": {
+          "description": "Environment variable NAMES only. A value (anything with '=' or lowercase) fails the pattern.",
+          "type": "array",
+          "maxItems": 40,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$" }
+        },
+        "data": {
+          "type": "array",
+          "maxItems": 30,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_.]{0,63}$" }
+        }
+      }
+    },
+
+    "decision": {
+      "type": "object",
+      "required": ["flowscribe", "type", "id", "number", "title", "summary", "status", "date", "updated"],
+      "additionalProperties": false,
+      "properties": {
+        "flowscribe": { "$ref": "#/$defs/version" },
+        "type": { "const": "decision" },
+        "id": { "$ref": "#/$defs/id" },
+        "number": { "type": "integer", "minimum": 1, "maximum": 9999 },
+        "title": { "$ref": "#/$defs/title" },
+        "summary": { "$ref": "#/$defs/summary" },
+        "status": { "enum": ["proposed", "accepted", "superseded", "rejected"] },
+        "date": { "$ref": "#/$defs/date" },
+        "updated": { "$ref": "#/$defs/date" },
+        "audience": { "$ref": "#/$defs/audience" },
+        "tags": { "$ref": "#/$defs/tags" },
+        "supersedes": { "type": "integer", "minimum": 1, "maximum": 9999 },
+        "affects": { "$ref": "#/$defs/idList" }
+      }
+    },
+
+    "log": {
+      "type": "object",
+      "required": ["flowscribe", "type", "id", "title", "status", "updated"],
+      "additionalProperties": false,
+      "properties": {
+        "flowscribe": { "$ref": "#/$defs/version" },
+        "type": { "const": "log" },
+        "id": { "type": "string", "pattern": "^\\d{4}-(0[1-9]|1[0-2])$" },
+        "title": { "$ref": "#/$defs/title" },
+        "status": { "$ref": "#/$defs/docStatus" },
+        "updated": { "$ref": "#/$defs/date" },
+        "audience": { "$ref": "#/$defs/audience" }
+      }
+    }
+  }
+}

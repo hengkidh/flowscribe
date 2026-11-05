@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:flowscribe:v1:index",
+  "title": "flowscribe index (v1) — generated, never hand-edited",
+  "type": "object",
+  "required": ["flowscribe", "generated", "app", "modules", "flows"],
+  "additionalProperties": false,
+  "properties": {
+    "flowscribe": { "const": 1 },
+    "generated": {
+      "description": "Marker for tools and agents: rebuild with `flowscribe index`, do not edit.",
+      "const": true
+    },
+    "app": {
+      "type": "object",
+      "required": ["name", "summary"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 240, "not": { "pattern": "://|@" } },
+        "stack": {
+          "type": "array",
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": { "type": "string", "maxLength": 40 }
+        }
+      }
+    },
+    "read_first": {
+      "description": "Up to 5 document paths every agent should open before any task.",
+      "type": "array",
+      "maxItems": 5,
+      "items": { "$ref": "#/$defs/docPath" }
+    },
+    "modules": { "type": "array", "items": { "$ref": "#/$defs/entry" } },
+    "flows": { "type": "array", "items": { "$ref": "#/$defs/entry" } },
+    "decisions": { "type": "array", "items": { "$ref": "#/$defs/entry" } }
+  },
+  "$defs": {
+    "docPath": {
+      "type": "string",
+      "pattern": "^\\.flowscribe/(flows|modules|decisions|log)/[a-z0-9-]+\\.md$"
+    },
+    "entry": {
+      "type": "object",
+      "required": ["id", "path", "summary", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,47}$" },
+        "path": { "$ref": "#/$defs/docPath" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "status": { "type": "string", "maxLength": 20 }
+      }
+    }
+  }
+}
